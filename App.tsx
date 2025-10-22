@@ -1,6 +1,4 @@
 import React, { useState, useCallback, useRef } from 'react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import { generateNpc } from './services/npcGenerator';
 import { decodeDnaProfile, generateNpcImage } from './services/geminiService';
 import { generatePersonalityDna } from './services/dnaGenerator';
@@ -9,7 +7,8 @@ import { Button } from './components/Button';
 import { Spinner } from './components/Spinner';
 import type { Npc } from './types';
 
-function App() {
+// FIX: Changed to a named export to address module resolution issues.
+export function App() {
   const [npc, setNpc] = useState<Npc | null>(null);
   const [npcProfile, setNpcProfile] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -18,7 +17,7 @@ function App() {
 
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [isImageLoading, setIsImageLoading] = useState(false);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const npcCardRef = useRef<HTMLDivElement>(null);
 
@@ -31,42 +30,24 @@ function App() {
     setDna(null);
 
     try {
+      // Step 1: Generate base data locally
       const baseNpc = generateNpc();
       const personalityDna = generatePersonalityDna();
 
-      const [profileResult, imageResult] = await Promise.allSettled([
+      // Step 2: Call AI services in parallel with the base data
+      const [profileMarkdown, generatedImageUrl] = await Promise.all([
         decodeDnaProfile(personalityDna, baseNpc),
         generateNpcImage(baseNpc),
       ]);
 
-      const errors: string[] = [];
-
-      if (profileResult.status === 'fulfilled') {
-        setNpc(baseNpc);
-        setDna(personalityDna);
-        setNpcProfile(profileResult.value);
-      } else {
-        console.error('Failed to generate NPC profile:', profileResult.reason);
-        errors.push('Failed to generate NPC profile. Please try again.');
-      }
-
-      if (imageResult.status === 'fulfilled') {
-        setImageUrl(imageResult.value);
-      } else {
-        console.error('Failed to generate NPC image:', imageResult.reason);
-        errors.push('The portrait could not be generated. Please try again.');
-      }
-
-      if (errors.length) {
-        setError(errors.join(' '));
-      }
+      // Step 3: If both succeed, update the state
+      setNpc(baseNpc);
+      setDna(personalityDna);
+      setNpcProfile(profileMarkdown);
+      setImageUrl(generatedImageUrl);
     } catch (err) {
       console.error('Failed to generate NPC profile and/or image:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred during generation.');
-      setNpc(null);
-      setNpcProfile(null);
-      setImageUrl(null);
-      setDna(null);
     } finally {
       setIsProfileLoading(false);
     }
@@ -83,53 +64,107 @@ function App() {
     } catch (err) {
       console.error('Failed to generate image:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      setImageUrl(null); // Clear image on failure
     } finally {
       setIsImageLoading(false);
     }
   }, [npc]);
 
-  const handleDownloadPdf = useCallback(async () => {
+  const handleDownloadHtml = useCallback(() => {
     if (!npcCardRef.current || !npc) return;
-    setIsDownloadingPdf(true);
+    setIsDownloading(true);
+
     try {
-      const canvas = await html2canvas(npcCardRef.current, {
-        backgroundColor: '#1e293b',
-        scale: 2,
-      });
-      const imgData = canvas.toDataURL('image/png');
+      // 1. Clone the card element to avoid modifying the live DOM.
+      const cardElement = npcCardRef.current.cloneNode(true) as HTMLElement;
 
-      const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const canvasAspectRatio = canvas.width / canvas.height;
-      const margin = 10;
-
-      let imgWidth = pdfWidth - margin * 2;
-      let imgHeight = imgWidth / canvasAspectRatio;
-
-      if (imgHeight > pdfHeight - margin * 2) {
-        imgHeight = pdfHeight - margin * 2;
-        imgWidth = imgHeight * canvasAspectRatio;
+      // 2. Find and remove the "Re-generate Portrait" button from the cloned element.
+      const buttonToRemove = cardElement.querySelector('[data-download-remove="true"]');
+      if (buttonToRemove) {
+          buttonToRemove.remove();
       }
 
-      const xOffset = (pdfWidth - imgWidth) / 2;
-      const yOffset = (pdfHeight - imgHeight) / 2;
+      // 3. Get the raw HTML of the modified clone.
+      const cardHtml = cardElement.outerHTML;
 
-      pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
-      pdf.save(`npc-profile-${npc.name.replace(/\s+/g, '_')}.pdf`);
+      // 4. This script will be embedded in the downloaded file to make the tabs interactive.
+      const script = 'const tabs = document.querySelectorAll(\'[role="tab"]\');\n' +
+        'const tabPanels = document.querySelectorAll(\'[role="tabpanel"]\');\n' +
+        'const inactiveClasses = \'bg-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-200\';\n' +
+        'const activeClasses = \'bg-slate-700 text-amber-400\';\n' +
+        'const baseClasses = \'px-4 py-2 text-sm font-bold transition-colors duration-200 focus:outline-none rounded-t-lg\';\n' +
+        'function switchTab(clickedTab) {\n' +
+        '  tabs.forEach(tab => {\n' +
+        '    tab.setAttribute(\'aria-selected\', \'false\');\n' +
+        '    tab.className = baseClasses + \' \' + inactiveClasses;\n' +
+        '  });\n' +
+        '  tabPanels.forEach(panel => {\n' +
+        '    panel.hidden = true;\n' +
+        '  });\n' +
+        '  clickedTab.setAttribute(\'aria-selected\', \'true\');\n' +
+        '  clickedTab.className = baseClasses + \' \' + activeClasses;\n' +
+        '  const controlledPanel = document.getElementById(clickedTab.getAttribute(\'aria-controls\'));\n' +
+        '  if (controlledPanel) {\n' +
+        '    controlledPanel.hidden = false;\n' +
+        '  }\n' +
+        '}\n' +
+        'tabs.forEach(tab => {\n' +
+        '  tab.addEventListener(\'click\', (e) => switchTab(e.currentTarget));\n' +
+        '});\n' +
+        'if (tabs.length > 0) {\n' +
+        '  switchTab(tabs[0]);\n' +
+        '}\n';
+
+      // 5. Define the SVG icon as a string and URL-encode it for the data URI.
+      const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 8.5V15.5L12 22L22 15.5V8.5L12 2Z"></path><line x1="2" y1="8.5" x2="12" y2="12"></line><line x1="22" y1="8.5" x2="12" y2="12"></line><line x1="12" y1="2" x2="12" y2="12"></line><line x1="12" y1="22" x2="12" y2="12"></line><line x1="2" y1="15.5" x2="12" y2="12"></line><line x1="22" y1="15.5" x2="12" y2="12"></line></svg>`;
+      const faviconUrlEncoded = `data:image/svg+xml,${svgIcon.replace(/</g, '%3C').replace(/>/g, '%3E').replace(/#/g, '%23').replace(/"/g, "'")}`;
+
+      // 6. Construct the full HTML document string, including the embedded icon.
+      const fullHtml = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${npc.name} - NPC Profile</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="icon" href="${faviconUrlEncoded}">
+        <style>
+          body {
+            background-color: #0f172a; /* bg-slate-900 */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 2rem;
+            min-height: 100vh;
+            font-family: sans-serif;
+          }
+        </style>
+      </head>
+      <body>
+        ${cardHtml}
+        <script>${script}</script>
+      </body>
+      </html>`;
+
+      // 7. Create a Blob and trigger the download.
+      const blob = new Blob([fullHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `npc-profile-${npc.name.replace(/\s+/g, '_')}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
     } catch (error) {
-      console.error('Failed to generate PDF:', error);
-      setError('Unable to download the NPC profile as a PDF. Please try again.');
+        console.error("Failed to generate HTML file:", error);
+        setError("Unable to download the NPC profile. Please try again.");
     } finally {
-      setIsDownloadingPdf(false);
+        setIsDownloading(false);
     }
-  }, [npc]);
-
+}, [npc]);
 
   return (
     <div className="bg-slate-900 min-h-screen text-white font-sans p-4 md:p-8 flex flex-col items-center">
@@ -155,8 +190,8 @@ function App() {
           {isProfileLoading ? <><Spinner /> <span>Decoding DNA...</span></> : 'Generate NPC Profile'}
         </Button>
         {npc && (
-          <Button onClick={handleDownloadPdf} variant="secondary" disabled={isDownloadingPdf}>
-            {isDownloadingPdf ? <><Spinner /> <span>Downloading...</span></> : 'Download PDF'}
+          <Button onClick={handleDownloadHtml} variant="secondary" disabled={isDownloading}>
+            {isDownloading ? <><Spinner /> <span>Downloading...</span></> : 'Download Character Sheet'}
           </Button>
         )}
       </div>
@@ -192,5 +227,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
