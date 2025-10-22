@@ -1,0 +1,5 @@
+{
+  "name": "D&D NPC Generator (DNA)",
+  "description": "A tool to generate detailed Non-Player Characters (NPCs) for fantasy role-playing games. It creates characters with unique names, appearances, professions, and personalities, and can use AI to further enhance their backstories.",
+  "requestFramePermissions": []
+}
