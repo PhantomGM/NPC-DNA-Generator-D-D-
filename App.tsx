@@ -31,24 +31,42 @@ function App() {
     setDna(null);
 
     try {
-      // Step 1: Generate base data locally
       const baseNpc = generateNpc();
       const personalityDna = generatePersonalityDna();
 
-      // Step 2: Call AI services in parallel with the base data
-      const [profileMarkdown, generatedImageUrl] = await Promise.all([
+      const [profileResult, imageResult] = await Promise.allSettled([
         decodeDnaProfile(personalityDna, baseNpc),
         generateNpcImage(baseNpc),
       ]);
 
-      // Step 3: If both succeed, update the state
-      setNpc(baseNpc);
-      setDna(personalityDna);
-      setNpcProfile(profileMarkdown);
-      setImageUrl(generatedImageUrl);
+      const errors: string[] = [];
+
+      if (profileResult.status === 'fulfilled') {
+        setNpc(baseNpc);
+        setDna(personalityDna);
+        setNpcProfile(profileResult.value);
+      } else {
+        console.error('Failed to generate NPC profile:', profileResult.reason);
+        errors.push('Failed to generate NPC profile. Please try again.');
+      }
+
+      if (imageResult.status === 'fulfilled') {
+        setImageUrl(imageResult.value);
+      } else {
+        console.error('Failed to generate NPC image:', imageResult.reason);
+        errors.push('The portrait could not be generated. Please try again.');
+      }
+
+      if (errors.length) {
+        setError(errors.join(' '));
+      }
     } catch (err) {
       console.error('Failed to generate NPC profile and/or image:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred during generation.');
+      setNpc(null);
+      setNpcProfile(null);
+      setImageUrl(null);
+      setDna(null);
     } finally {
       setIsProfileLoading(false);
     }
@@ -65,7 +83,6 @@ function App() {
     } catch (err) {
       console.error('Failed to generate image:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
-      setImageUrl(null); // Clear image on failure
     } finally {
       setIsImageLoading(false);
     }
@@ -75,42 +92,43 @@ function App() {
     if (!npcCardRef.current || !npc) return;
     setIsDownloadingPdf(true);
     try {
-        const canvas = await html2canvas(npcCardRef.current, {
-            backgroundColor: '#1e293b', // bg-slate-800
-            scale: 2,
-        });
-        const imgData = canvas.toDataURL('image/png');
-        
-        const pdf = new jsPDF({
-            orientation: 'p',
-            unit: 'mm',
-            format: 'a4'
-        });
+      const canvas = await html2canvas(npcCardRef.current, {
+        backgroundColor: '#1e293b',
+        scale: 2,
+      });
+      const imgData = canvas.toDataURL('image/png');
 
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        const canvasAspectRatio = canvas.width / canvas.height;
-        const margin = 10;
-        
-        let imgWidth = pdfWidth - (margin * 2);
-        let imgHeight = imgWidth / canvasAspectRatio;
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+      });
 
-        if (imgHeight > pdfHeight - (margin * 2)) {
-            imgHeight = pdfHeight - (margin * 2);
-            imgWidth = imgHeight * canvasAspectRatio;
-        }
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const canvasAspectRatio = canvas.width / canvas.height;
+      const margin = 10;
 
-        const xOffset = (pdfWidth - imgWidth) / 2;
-        const yOffset = (pdfHeight - imgHeight) / 2;
+      let imgWidth = pdfWidth - margin * 2;
+      let imgHeight = imgWidth / canvasAspectRatio;
 
-        pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
-        pdf.save(`npc-profile-${npc.name.replace(/\s+/g, '_')}.pdf`);
+      if (imgHeight > pdfHeight - margin * 2) {
+        imgHeight = pdfHeight - margin * 2;
+        imgWidth = imgHeight * canvasAspectRatio;
+      }
+
+      const xOffset = (pdfWidth - imgWidth) / 2;
+      const yOffset = (pdfHeight - imgHeight) / 2;
+
+      pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
+      pdf.save(`npc-profile-${npc.name.replace(/\s+/g, '_')}.pdf`);
     } catch (error) {
-        console.error("Failed to generate PDF:", error);
+      console.error('Failed to generate PDF:', error);
+      setError('Unable to download the NPC profile as a PDF. Please try again.');
     } finally {
-        setIsDownloadingPdf(false);
+      setIsDownloadingPdf(false);
     }
-}, [npc]);
+  }, [npc]);
 
 
   return (

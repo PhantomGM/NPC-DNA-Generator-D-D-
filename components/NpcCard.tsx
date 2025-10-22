@@ -4,6 +4,37 @@ import { Button } from './Button';
 import { Spinner } from './Spinner';
 import { decodeDna } from '../services/dnaDecoder';
 
+interface ParsedProfileContent {
+  name: string;
+  role: string;
+  alignment: string;
+  narrativeEssence?: string;
+  archetype?: string;
+  appearance?: string;
+  personality?: string;
+  backstory?: string;
+  bdi?: string;
+  strengthsWeaknesses?: string;
+  secrets?: string;
+  relationships?: string;
+  possessions?: string;
+  roleplayingCues?: string;
+  interaction?: string;
+  hooks?: string;
+}
+
+interface ParsedProfileError {
+  error: true;
+  raw: string;
+  name?: string;
+}
+
+type ParsedProfile = ParsedProfileContent | ParsedProfileError;
+
+const isParsedProfileError = (profile: ParsedProfile | null): profile is ParsedProfileError => {
+  return Boolean(profile && 'error' in profile && profile.error);
+};
+
 // Helper components for rendering parsed markdown content
 
 // Renders blocks of text, handling simple lists and emphasis
@@ -140,11 +171,28 @@ export const NpcCard = forwardRef<HTMLDivElement, NpcCardProps>(({
 }, ref) => {
   const [activeTab, setActiveTab] = useState('profile');
 
-  const parsedProfile = useMemo(() => {
+  const parsedProfile = useMemo<ParsedProfile | null>(() => {
     if (!profile) return null;
 
-    const parsed: any = {};
-    
+    const parsed: ParsedProfileContent = {
+      name: npc.name,
+      role: '',
+      alignment: '',
+      narrativeEssence: '',
+      archetype: '',
+      appearance: '',
+      personality: '',
+      backstory: '',
+      bdi: '',
+      strengthsWeaknesses: '',
+      secrets: '',
+      relationships: '',
+      possessions: '',
+      roleplayingCues: '',
+      interaction: '',
+      hooks: '',
+    };
+
     try {
         const allHeaders = [
             "Appearance & Presence", "Personality & Internal Conflict", "Backstory",
@@ -152,7 +200,7 @@ export const NpcCard = forwardRef<HTMLDivElement, NpcCardProps>(({
             "Secrets", "Significant Relationships", "Notable Possessions", "Roleplaying Cues",
             "Example Interaction", "Adventure Hooks"
         ];
-        
+
         // Find the start of the first content section to isolate the header block
         let firstSectionIndex = profile.length;
         for (const headerText of ["Profile", ...allHeaders]) {
@@ -170,7 +218,7 @@ export const NpcCard = forwardRef<HTMLDivElement, NpcCardProps>(({
         parsed.name = headerBlock.match(/^(?:#+\s*)?\*\*(.*?)\*\*/)?.[1]?.trim() || npc.name;
         parsed.role = headerBlock.match(/\*\*Role:\*\* (.*?)\n/)?.[1]?.trim() || '';
         parsed.alignment = headerBlock.match(/\*\*Alignment:\*\* (.*?)\n/)?.[1]?.trim() || '';
-        
+
         const tableRegex = /\|.*?\n\|[ -:|]+?\n\|(.*?)\|(.*?)\|/s; // 's' flag for dotall
         const tableMatch = headerBlock.match(tableRegex);
         if (tableMatch) {
@@ -207,7 +255,7 @@ export const NpcCard = forwardRef<HTMLDivElement, NpcCardProps>(({
 
             const start = currentHeader.index + currentHeader.headerLength;
             const end = nextHeader ? nextHeader.index : contentBlock.length;
-            
+
             sectionMap[currentHeader.key] = contentBlock.substring(start, end).trim();
         }
 
@@ -228,7 +276,7 @@ export const NpcCard = forwardRef<HTMLDivElement, NpcCardProps>(({
       console.error("Failed to parse NPC profile markdown.", e);
       return { error: true, raw: profile };
     }
-    
+
     // A final check to ensure something was parsed
     if (Object.values(parsed).filter(v => typeof v === 'string' && v.length > 10).length < 3) {
       console.warn("Parsing may have failed to extract enough content.", parsed);
@@ -247,7 +295,7 @@ export const NpcCard = forwardRef<HTMLDivElement, NpcCardProps>(({
     return null; // Or some loading/error state
   }
 
-  if (parsedProfile.error) {
+  if (isParsedProfileError(parsedProfile)) {
     // Fallback for parsing errors
     return (
         <div ref={ref} className="bg-slate-800 text-slate-300 rounded-lg shadow-2xl p-6 md:p-8 border border-slate-700 w-full max-w-5xl mx-auto font-serif">
