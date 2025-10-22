@@ -1,5 +1,7 @@
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import type { Npc } from '../types';
+import { raceDescriptions } from '../data/npcData';
 
 const API_KEY = process.env.API_KEY;
 
@@ -191,9 +193,15 @@ export const generateNpcImage = async (npc: Npc): Promise<string> => {
   }
   try {
     const facialHairDesc = npc.facialHair !== "." ? `They have ${npc.facialHair.replace(' and', '').trim()}` : '';
+    const raceDescription = raceDescriptions[npc.race] || "A fantasy character.";
+
     const prompt = `
       Fantasy character portrait of a ${npc.age} ${npc.gender} Dungeons & Dragons style ${npc.race} ${npc.profession.trim()}.
-      Appearance details: ${npc.complexion.trim()} skin, ${npc.hairStyle} ${npc.hairColor}, ${npc.eyeShape} ${npc.eyeColor}. ${facialHairDesc} ${npc.descriptor}.
+      
+      **Racial characteristics for a ${npc.race}:** ${raceDescription}
+      
+      **Specific appearance details:** ${npc.complexion.trim()} skin, ${npc.hairStyle} ${npc.hairColor}, ${npc.eyeShape} ${npc.eyeColor}. ${facialHairDesc} ${npc.descriptor}.
+      
       Style: digital painting, detailed, fantasy, character concept art, high quality.
     `;
 

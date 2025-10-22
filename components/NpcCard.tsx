@@ -135,7 +135,8 @@ const generateStats = (npc: Npc): StatBlock => {
     
     const skillString = Object.entries(skills).map(([skill, bonus]) => {
         const ability = { 'Athletics': mods.str, 'Stealth': mods.dex, 'Sleight of Hand': mods.dex, 'Arcana': mods.int, 'History': mods.int, 'Perception': mods.wis, 'Animal Handling': mods.wis, 'Deception': mods.cha, 'Intimidation': mods.cha, 'Persuasion': mods.cha }[skill] || 0;
-        return `${skill} ${getModifierString(10 + ability * 2 + bonus)}`;
+        const totalBonus = ability + bonus;
+        return `${skill} ${totalBonus >= 0 ? '+' : ''}${totalBonus}`;
     }).join(', ');
 
     const passivePerception = 10 + mods.wis + (skills['Perception'] ? profBonus : 0);

@@ -30,24 +30,43 @@ export function App() {
     setDna(null);
 
     try {
-      // Step 1: Generate base data locally
       const baseNpc = generateNpc();
       const personalityDna = generatePersonalityDna();
 
-      // Step 2: Call AI services in parallel with the base data
-      const [profileMarkdown, generatedImageUrl] = await Promise.all([
+      const [profileResult, imageResult] = await Promise.allSettled([
         decodeDnaProfile(personalityDna, baseNpc),
         generateNpcImage(baseNpc),
       ]);
 
-      // Step 3: If both succeed, update the state
+      // The profile is essential. If it fails, we can't proceed.
+      if (profileResult.status === 'rejected') {
+        console.error('Failed to generate NPC profile:', profileResult.reason);
+        // Throw the specific reason to be displayed to the user.
+        throw profileResult.reason;
+      }
+
+      // Profile succeeded, so we can set the main state.
       setNpc(baseNpc);
       setDna(personalityDna);
-      setNpcProfile(profileMarkdown);
-      setImageUrl(generatedImageUrl);
+      setNpcProfile(profileResult.value);
+
+      // Now handle the image result, which is non-essential.
+      if (imageResult.status === 'fulfilled') {
+        setImageUrl(imageResult.value);
+      } else {
+        console.error('Failed to generate NPC image:', imageResult.reason);
+        // Set an error for the user, but we will still show the profile.
+        setError('The character profile was created, but the portrait could not be generated.');
+        setImageUrl(null); // Ensure image is cleared.
+      }
     } catch (err) {
-      console.error('Failed to generate NPC profile and/or image:', err);
+      console.error('Failed to generate NPC:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred during generation.');
+      // Clear all state on a critical failure
+      setNpc(null);
+      setNpcProfile(null);
+      setImageUrl(null);
+      setDna(null);
     } finally {
       setIsProfileLoading(false);
     }
