@@ -206,11 +206,16 @@ export const generateNpcImage = async (npc: Npc): Promise<string> => {
           responseModalities: [Modality.IMAGE],
       },
     });
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
+
+    const candidate = response.candidates?.[0];
+    const parts = candidate?.content?.parts ?? [];
+
+    for (const part of parts) {
+      if (part.inlineData?.data) {
         return part.inlineData.data;
       }
     }
+
     throw new Error("The AI service did not return an image. Please try generating again.");
   } catch (error) {
     console.error("Error generating NPC image with AI:", error);
